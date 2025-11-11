@@ -1,0 +1,190 @@
+:root{
+  --bg: #0f1724;
+  --card: #0b1220;
+  --muted: #9aa4b2;
+  --accent: #6ee7b7;
+  --accent-2: #60a5fa;
+  --glass: rgba(255,255,255,0.03);
+  --radius: 12px;
+  --shadow: 0 8px 30px rgba(2,6,23,0.6);
+  --fw-regular: 400;
+  --fw-medium: 600;
+  --gap: 18px;
+  --container-w: 980px;
+}
+
+*{box-sizing:border-box}
+html,body,#root{height:100%}
+body{
+  margin:0;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  background: linear-gradient(180deg, #071022 0%, var(--bg) 100%);
+  color:#e6eef6;
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+  line-height:1.35;
+  padding:32px;
+}
+
+/* Centered app container */
+.app-shell{
+  max-width:var(--container-w);
+  margin:0 auto;
+  display:flex;
+  flex-direction:column;
+  gap:var(--gap);
+}
+
+/* Header */
+.header{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:16px;
+  padding:16px;
+  background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+  border-radius:calc(var(--radius) + 4px);
+  box-shadow:var(--shadow);
+  border:1px solid rgba(255,255,255,0.03);
+}
+.brand{
+  display:flex;
+  align-items:center;
+  gap:12px;
+}
+.brand .logo{
+  width:44px;
+  height:44px;
+  border-radius:10px;
+  background:linear-gradient(135deg,var(--accent),var(--accent-2));
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-weight:700;
+  color:#022;
+  box-shadow:0 6px 18px rgba(96,165,250,0.12), inset 0 -6px 12px rgba(0,0,0,0.12);
+}
+.title{
+  font-size:18px;
+  font-weight:700;
+  letter-spacing: -0.2px;
+}
+.subtitle{color:var(--muted);font-size:13px}
+
+/* Main content layout */
+.layout{
+  display:grid;
+  grid-template-columns: 1fr 360px;
+  gap:var(--gap);
+  align-items:start;
+}
+
+/* Left: main card */
+.card{
+  background:linear-gradient(180deg,var(--card), rgba(11,18,32,0.9));
+  padding:20px;
+  border-radius:var(--radius);
+  box-shadow:var(--shadow);
+  border:1px solid rgba(255,255,255,0.03);
+}
+
+/* Controls and audio area */
+.controls{
+  display:flex;
+  gap:12px;
+  align-items:center;
+  flex-wrap:wrap;
+}
+.button{
+  appearance:none;
+  border:0;
+  padding:10px 14px;
+  border-radius:10px;
+  background:linear-gradient(180deg,var(--accent), #3dd9a0);
+  color:#022;
+  font-weight:600;
+  cursor:pointer;
+  box-shadow:0 6px 18px rgba(110,231,183,0.12);
+  transition:transform .12s ease, box-shadow .12s ease, opacity .12s;
+}
+.button.secondary{
+  background:transparent;
+  color:var(--accent-2);
+  border:1px solid rgba(96,165,250,0.12);
+  box-shadow:none;
+}
+.button:active{transform:translateY(1px)}
+.button[disabled]{opacity:0.5;cursor:default;transform:none}
+
+/* File input */
+.file-drop{
+  margin-top:12px;
+  padding:18px;
+  border-radius:10px;
+  border:1px dashed rgba(255,255,255,0.04);
+  background:var(--glass);
+  display:flex;
+  gap:12px;
+  align-items:center;
+}
+.file-drop .hint{color:var(--muted);font-size:13px}
+
+/* Right column card (status / results) */
+.side{
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+}
+.side .mini{
+  padding:14px;
+  border-radius:10px;
+  background:linear-gradient(180deg, rgba(255,255,255,0.012), rgba(255,255,255,0.02));
+  border:1px solid rgba(255,255,255,0.02);
+}
+.status{
+  display:flex;
+  gap:10px;
+  align-items:center;
+  color:var(--muted);
+  font-size:13px;
+}
+.pulse{
+  width:10px;height:10px;border-radius:50%;
+  background:linear-gradient(90deg,var(--accent),var(--accent-2));
+  box-shadow:0 6px 18px rgba(96,165,250,0.12);
+  transform-origin:center;
+  animation: pulse 1.6s infinite;
+}
+@keyframes pulse{
+  0%{transform:scale(1);opacity:1}
+  50%{transform:scale(1.6);opacity:0.6}
+  100%{transform:scale(1);opacity:1}
+}
+
+/* Result list */
+.result-list{display:flex;flex-direction:column;gap:10px}
+.result{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  padding:12px;
+  border-radius:8px;
+  background:linear-gradient(180deg, rgba(255,255,255,0.008), rgba(255,255,255,0.01));
+  border:1px solid rgba(255,255,255,0.02);
+}
+.result .meta{color:var(--muted);font-size:13px}
+.result .title{font-weight:600}
+
+/* Footer small */
+.footer{
+  font-size:13px;
+  color:var(--muted);
+  text-align:center;
+  margin-top:6px;
+}
+
+/* Responsiveness */
+@media (max-width:960px){
+  .layout{grid-template-columns: 1fr; padding-bottom:8px}
+  .header{flex-direction:column;align-items:flex-start}
+}
