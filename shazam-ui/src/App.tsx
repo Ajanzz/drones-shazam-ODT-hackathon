@@ -42,9 +42,16 @@ export default function App() {
   }
 
   return (
-    <div className="page">
+    <div className="app-shell page">
       <header className="header">
-        <h1>Shazam for Drones</h1>
+        <div className="brand">
+          <div className="logo">SD</div>
+          <div>
+            <h1 className="title">Shazam for Drones</h1>
+            <div className="subtitle">Lightweight on-device audio recognition</div>
+          </div>
+        </div>
+
         <div className={"pill " + (wsConnected ? "ok" : "bad")}>
           WS: {wsConnected ? "connected" : "disconnected"}
         </div>
@@ -52,7 +59,7 @@ export default function App() {
 
       <section className="grid">
         <div className="card">
-          <h2>Live microphone</h2>
+          <h2 className="section-title"><span className="icon">🎙️</span> Live microphone</h2>
           <p className="muted">
             Streams audio chunks to <code>{BACKEND_URL}</code> via WebSocket
             (<code>/ws/audio</code>). Start once the backend is running.
@@ -65,23 +72,29 @@ export default function App() {
         </div>
 
         <div className="card">
-          <h2>Upload a clip</h2>
+          <h2 className="section-title"><span className="icon">📁</span> Upload a clip</h2>
           <p className="muted">Sends a file to POST /predict for one-shot classification.</p>
-          <input
-            type="file"
-            accept="audio/*"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) onUpload(f);
-            }}
-          />
-          {loading && <p>Analyzing…</p>}
+
+          <div className="file-drop">
+            <input
+              className="file-input"
+              type="file"
+              accept="audio/*"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) onUpload(f);
+              }}
+            />
+            <div className="hint">Drop or choose an audio file</div>
+          </div>
+
+          {loading && <p className="muted">Analyzing…</p>}
           {error && <p className="error">{error}</p>}
         </div>
       </section>
 
       <section className="card">
-        <h2>Current prediction</h2>
+        <h2 className="section-title"><span className="icon">🔮</span> Current prediction</h2>
         {!current ? (
           <p className="muted">No inference yet.</p>
         ) : (
@@ -104,15 +117,15 @@ export default function App() {
       </section>
 
       <section className="card">
-        <h2>Recent events</h2>
+        <h2 className="section-title"><span className="icon">🧠</span> Recent events</h2>
         {history.length === 0 ? (
           <p className="muted">Nothing yet.</p>
         ) : (
           <ul className="history">
             {history.map((e, i) => (
-              <li key={i}>
+              <li key={i} className="history-item">
                 <span className="tag">{e.label}</span>
-                <span>{(e.score * 100).toFixed(1)}%</span>
+                <span className="score">{(e.score * 100).toFixed(1)}%</span>
                 <span className="muted small">
                   {new Date(e.timestamp).toLocaleTimeString()}
                 </span>
