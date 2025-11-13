@@ -92,7 +92,6 @@ def build_dummy_event(window: float | None = None) -> InferenceEvent:
     preset = next(_DUMMY_CYCLE)
     metrics = DroneMetrics(**preset["metrics"])
     score = preset["score"]
-
     return InferenceEvent(
         label="drone",
         score=score,
