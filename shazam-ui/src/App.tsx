@@ -116,6 +116,62 @@ export default function App() {
         )}
       </section>
 
+      {current?.metrics && (
+        <section className="card">
+          <h2 className="section-title"><span className="icon">🚁</span> Drone Characteristics</h2>
+          <div className="metrics-grid">
+            <div className="metric-item">
+              <div className="metric-label">Speed</div>
+              <div className="metric-value">
+                {current.metrics.speed !== null 
+                  ? `${current.metrics.speed.toFixed(1)} m/s (${(current.metrics.speed * 3.6).toFixed(1)} km/h)`
+                  : "Calculating..."}
+              </div>
+            </div>
+            <div className="metric-item">
+              <div className="metric-label">Distance</div>
+              <div className="metric-value">
+                {current.metrics.distance !== null 
+                  ? `${current.metrics.distance.toFixed(1)} m`
+                  : "Calculating..."}
+              </div>
+            </div>
+            <div className="metric-item">
+              <div className="metric-label">Direction</div>
+              <div className="metric-value">
+                {current.metrics.direction 
+                  ? <span className={`direction-badge direction-${current.metrics.direction}`}>
+                      {current.metrics.direction}
+                    </span>
+                  : "Unknown"}
+              </div>
+            </div>
+            <div className="metric-item">
+              <div className="metric-label">Flight State</div>
+              <div className="metric-value">
+                <span className={`state-badge state-${current.metrics.flight_state}`}>
+                  {current.metrics.flight_state}
+                </span>
+              </div>
+            </div>
+            <div className="metric-item">
+              <div className="metric-label">Payload</div>
+              <div className="metric-value">
+                {current.metrics.has_payload ? (
+                  <span className="payload-badge payload-yes">
+                    Yes ({(current.metrics.payload_confidence * 100).toFixed(0)}%)
+                  </span>
+                ) : (
+                  <span className="payload-badge payload-no">
+                    No ({(current.metrics.payload_confidence * 100).toFixed(0)}%)
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
       <section className="card">
         <h2 className="section-title"><span className="icon">🧠</span> Recent events</h2>
         {history.length === 0 ? (
