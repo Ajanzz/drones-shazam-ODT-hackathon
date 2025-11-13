@@ -1,0 +1,10 @@
+# Python 3.11 required
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+python-multipart==0.0.6
+pydantic==2.5.0
+numpy==1.24.3
+scipy==1.11.4
+librosa==0.10.1
+soundfile==0.12.1
+
