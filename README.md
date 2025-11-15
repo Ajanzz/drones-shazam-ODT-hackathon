@@ -11,7 +11,8 @@ Software application that detects and classifies drones based on sound they prod
 - **Low-Cost Deployment**: Requires only microphones, no radar towers or specialized hardware
 - **Cross-Platform**: Runs on smartphones, laptops, and IoT devices
 - **Scalable**: Suitable for homes, stadiums, airports, and military bases
-- 
+- **Visualization**: Generate heat map pinpointing nearby drones in the area
+ 
 ## 🛠️ Tech Stack
 - **Languages**: Python, TypeScript
 - **Frameworks**: PyTorch (ML), FastAPI (backend), React + Vite (frontend)
