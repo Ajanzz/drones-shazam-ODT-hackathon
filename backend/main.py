@@ -28,7 +28,7 @@ USE_DUMMY_DATA = False  # set True to test UI without model/analyzer
 # ============================================================
 
 class DroneMetrics(BaseModel):
-    """Drone characteristics extracted from audio."""
+    
     speed: Optional[float] = None          # m/s
     distance: Optional[float] = None       # meters
     direction: Optional[str] = None        # "approaching", "receding", "stationary", "unknown"
@@ -120,7 +120,7 @@ app.add_middleware(
 # ONNX model setup (from master branch)
 # ============================================================
 
-ONNX_MODEL_PATH = "model_detector.onnx"
+ONNX_MODEL_PATH = "model_detector (2).onnx"
 CLASS_NAMES = ["non-drone", "drone"]
 
 session: Optional[ort.InferenceSession] = None
@@ -153,45 +153,22 @@ MAX_SECONDS = 3        # window length used for training
 
 
 def decode_audio_bytes(raw_bytes: bytes) -> np.ndarray:
-    """
-    Decode any audio bytes (wav / webm / opus / m4a / mp3 / etc.)
-    into a mono float32 waveform at TARGET_SR.
-    """
-    container = av.open(io.BytesIO(raw_bytes))
-    stream = container.streams.audio[0]
+    """Decode audio bytes exactly like in training (librosa.load)."""
+    audio_io = io.BytesIO(raw_bytes)
+    # librosa handles wav/mp3/etc. via soundfile/audioread
+    y, sr = librosa.load(audio_io, sr=TARGET_SR, mono=True)
 
-    frames = []
-    for frame in container.decode(stream):
-        arr = frame.to_ndarray()
-        # if multi-channel, average to mono
-        if arr.ndim > 1:
-            arr = arr.mean(axis=0)
-        frames.append(arr)
-
-    if not frames:
-        raise ValueError("No audio frames decoded")
-
-    audio = np.concatenate(frames).astype(np.float32)
-    orig_sr = stream.rate
-
-    if orig_sr != TARGET_SR:
-        audio = librosa.resample(audio, orig_sr=orig_sr, target_sr=TARGET_SR)
-
-    # trim / pad to fixed window
     max_samples = TARGET_SR * MAX_SECONDS
-    if len(audio) > max_samples:
-        audio = audio[:max_samples]
+    if len(y) > max_samples:
+        y = y[:max_samples]
     else:
-        audio = np.pad(audio, (0, max_samples - len(audio)), mode="constant")
+        y = np.pad(y, (0, max_samples - len(y)), mode="constant")
 
-    return audio
+    return y
 
 
 def preprocess_audio_bytes(raw_bytes: bytes) -> np.ndarray:
-    """
-    Convert raw audio bytes -> log-mel tensor of shape
-    (1, 1, 64, time) matching ONNX input.
-    """
+    """Convert raw audio bytes -> log-mel tensor (1,1,64,T), same as training."""
     y = decode_audio_bytes(raw_bytes)
 
     mel = librosa.feature.melspectrogram(
@@ -203,15 +180,12 @@ def preprocess_audio_bytes(raw_bytes: bytes) -> np.ndarray:
     )
     logmel = librosa.power_to_db(mel).astype(np.float32)  # (64, time)
 
-    # (batch, channels, 64, time)
-    x = logmel[np.newaxis, np.newaxis, :, :]
+    x = logmel[np.newaxis, np.newaxis, :, :]  # (1, 1, 64, T)
     return x
 
 
 def run_model(input_tensor: np.ndarray) -> Dict[str, float]:
-    """
-    Run ONNX model and return probs per class.
-    """
+
     if session is None or INPUT_NAME is None or OUTPUT_NAME is None:
         raise RuntimeError("ONNX session is not initialized (check USE_DUMMY_DATA and model path).")
 
