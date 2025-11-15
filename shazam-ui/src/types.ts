@@ -1,17 +1,24 @@
-export type DroneMetrics = {
-  speed: number | null; // m/s
-  distance: number | null; // meters
-  direction: string | null; // "approaching", "receding", "stationary", "unknown"
-  flight_state: string; // "hovering", "flying", "transitioning", "unknown"
+// types.ts (or wherever InferenceEvent is defined)
+
+export interface DroneMetrics {
+  speed: number | null;
+  distance: number | null;
+  direction: string | null;
+  flight_state: string;
   has_payload: boolean;
   payload_confidence: number;
-};
+}
 
-export type InferenceEvent = {
-  label: string; // e.g., "drone-dji-phantom" or "non-drone"
-  score: number; // top label confidence 0..1
-  probs: Record<string, number>; // full distribution for bars
-  timestamp: number; // ms since epoch
-  window_sec?: number; // analysis window length
-  metrics?: DroneMetrics | null; // Drone characteristics (only present if drone detected)
-};
+export interface InferenceEvent {
+  label: string;
+  score: number;
+  probs: Record<string, number>;
+  timestamp: number;
+  window_sec?: number | null;
+  metrics?: DroneMetrics | null;
+
+  // NEW: drone type classifier output
+  drone_type?: string | null;
+  drone_type_score?: number | null;
+  drone_type_probs?: Record<string, number> | null;
+}

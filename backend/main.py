@@ -28,7 +28,6 @@ USE_DUMMY_DATA = False  # set True to test UI without model/analyzer
 # ============================================================
 
 class DroneMetrics(BaseModel):
-    
     speed: Optional[float] = None          # m/s
     distance: Optional[float] = None       # meters
     direction: Optional[str] = None        # "approaching", "receding", "stationary", "unknown"
@@ -38,12 +37,18 @@ class DroneMetrics(BaseModel):
 
 
 class InferenceEvent(BaseModel):
+    # primary detector (drone vs non-drone)
     label: str                              # "drone" or "non-drone"
     score: float                            # confidence for label
-    probs: Dict[str, float]                 # per-class probabilities
+    probs: Dict[str, float]                 # per-class probabilities (detector)
     timestamp: int                          # ms since epoch
     window_sec: float | None = None         # analysis window length
     metrics: Optional[DroneMetrics] = None  # optional drone metrics
+
+    # secondary classifier (drone type A–J), only populated when label == "drone"
+    drone_type: Optional[str] = None
+    drone_type_score: Optional[float] = None
+    drone_type_probs: Optional[Dict[str, float]] = None
 
 
 # ============================================================
@@ -99,6 +104,9 @@ def build_dummy_event(window: float | None = None) -> InferenceEvent:
         timestamp=int(time.time() * 1000),
         window_sec=window,
         metrics=metrics,
+        drone_type="drone_A",
+        drone_type_score=0.9,
+        drone_type_probs={f"drone_{c}": (0.9 if c == "A" else 0.01) for c in "ABCDEFGHIJ"},
     )
 
 
@@ -117,30 +125,52 @@ app.add_middleware(
 )
 
 # ============================================================
-# ONNX model setup (from master branch)
+# ONNX model setup: detector + classifier
 # ============================================================
 
-ONNX_MODEL_PATH = "model_detector (2).onnx"
-CLASS_NAMES = ["non-drone", "drone"]
+DETECTOR_MODEL_PATH = "model_detector (1).onnx"
+CLASSIFIER_MODEL_PATH = "drone_classifier_20s.onnx"
 
-session: Optional[ort.InferenceSession] = None
-INPUT_NAME: Optional[str] = None
-OUTPUT_NAME: Optional[str] = None
+DETECTOR_CLASS_NAMES = ["non-drone", "drone"]
+DRONE_CLASS_NAMES = [f"drone_{c}" for c in "ABCDEFGHIJ"]
+
+detector_session: Optional[ort.InferenceSession] = None
+classifier_session: Optional[ort.InferenceSession] = None
+
+DETECTOR_INPUT_NAME: Optional[str] = None
+DETECTOR_OUTPUT_NAME: Optional[str] = None
+
+CLASSIFIER_INPUT_NAME: Optional[str] = None
+CLASSIFIER_OUTPUT_NAME: Optional[str] = None
 
 if not USE_DUMMY_DATA:
-    session = ort.InferenceSession(
-        ONNX_MODEL_PATH,
-        providers=["CPUExecutionProvider"],  # or ["CUDAExecutionProvider", "CPUExecutionProvider"]
+    # detector (drone vs non-drone)
+    detector_session = ort.InferenceSession(
+        DETECTOR_MODEL_PATH,
+        providers=["CPUExecutionProvider"],
     )
+    det_input_meta = detector_session.get_inputs()[0]
+    det_output_meta = detector_session.get_outputs()[0]
+    DETECTOR_INPUT_NAME = det_input_meta.name
+    DETECTOR_OUTPUT_NAME = det_output_meta.name
 
-    input_meta = session.get_inputs()[0]
-    output_meta = session.get_outputs()[0]
-    INPUT_NAME = input_meta.name
-    OUTPUT_NAME = output_meta.name
+    print("Loaded detector ONNX model:")
+    print("  Input :", DETECTOR_INPUT_NAME, det_input_meta.shape, det_input_meta.type)
+    print("  Output:", DETECTOR_OUTPUT_NAME, det_output_meta.shape, det_output_meta.type)
 
-    print("Loaded ONNX model:")
-    print("  Input :", INPUT_NAME, input_meta.shape, input_meta.type)
-    print("  Output:", OUTPUT_NAME, output_meta.shape, output_meta.type)
+    # classifier (drone type A–J)
+    classifier_session = ort.InferenceSession(
+        CLASSIFIER_MODEL_PATH,
+        providers=["CPUExecutionProvider"],
+    )
+    cls_input_meta = classifier_session.get_inputs()[0]
+    cls_output_meta = classifier_session.get_outputs()[0]
+    CLASSIFIER_INPUT_NAME = cls_input_meta.name
+    CLASSIFIER_OUTPUT_NAME = cls_output_meta.name
+
+    print("Loaded classifier ONNX model:")
+    print("  Input :", CLASSIFIER_INPUT_NAME, cls_input_meta.shape, cls_input_meta.type)
+    print("  Output:", CLASSIFIER_OUTPUT_NAME, cls_output_meta.shape, cls_output_meta.type)
 
 
 # ============================================================
@@ -155,7 +185,6 @@ MAX_SECONDS = 3        # window length used for training
 def decode_audio_bytes(raw_bytes: bytes) -> np.ndarray:
     """Decode audio bytes exactly like in training (librosa.load)."""
     audio_io = io.BytesIO(raw_bytes)
-    # librosa handles wav/mp3/etc. via soundfile/audioread
     y, sr = librosa.load(audio_io, sr=TARGET_SR, mono=True)
 
     max_samples = TARGET_SR * MAX_SECONDS
@@ -184,22 +213,28 @@ def preprocess_audio_bytes(raw_bytes: bytes) -> np.ndarray:
     return x
 
 
-def run_model(input_tensor: np.ndarray) -> Dict[str, float]:
+def _softmax_to_probs(logits: np.ndarray) -> np.ndarray:
+    logits = np.squeeze(logits).astype(np.float32)
+    exp = np.exp(logits - np.max(logits))
+    return exp / np.sum(exp)
 
-    if session is None or INPUT_NAME is None or OUTPUT_NAME is None:
-        raise RuntimeError("ONNX session is not initialized (check USE_DUMMY_DATA and model path).")
 
-    input_tensor = input_tensor.astype(np.float32)
+def run_detector(input_tensor: np.ndarray) -> Dict[str, float]:
+    if detector_session is None or DETECTOR_INPUT_NAME is None or DETECTOR_OUTPUT_NAME is None:
+        raise RuntimeError("Detector ONNX session is not initialized.")
 
-    outputs = session.run([OUTPUT_NAME], {INPUT_NAME: input_tensor})
-    out = outputs[0]  # shape: (batch, num_classes)
-    out = np.squeeze(out)  # (num_classes,)
+    outputs = detector_session.run([DETECTOR_OUTPUT_NAME], {DETECTOR_INPUT_NAME: input_tensor})
+    probs = _softmax_to_probs(outputs[0])
+    return {DETECTOR_CLASS_NAMES[i]: float(probs[i]) for i in range(len(DETECTOR_CLASS_NAMES))}
 
-    # if model already has softmax, skip this and just normalize if needed
-    exp = np.exp(out - np.max(out))
-    probs = exp / np.sum(exp)
 
-    return {CLASS_NAMES[i]: float(probs[i]) for i in range(len(CLASS_NAMES))}
+def run_classifier(input_tensor: np.ndarray) -> Dict[str, float]:
+    if classifier_session is None or CLASSIFIER_INPUT_NAME is None or CLASSIFIER_OUTPUT_NAME is None:
+        raise RuntimeError("Classifier ONNX session is not initialized.")
+
+    outputs = classifier_session.run([CLASSIFIER_OUTPUT_NAME], {CLASSIFIER_INPUT_NAME: input_tensor})
+    probs = _softmax_to_probs(outputs[0])
+    return {DRONE_CLASS_NAMES[i]: float(probs[i]) for i in range(len(DRONE_CLASS_NAMES))}
 
 
 # ============================================================
@@ -213,7 +248,7 @@ if not USE_DUMMY_DATA:
 
 # ============================================================
 # HTTP: one-shot /predict
-# Uses: ONNX for classification + analyzer for metrics
+# Uses: detector ONNX + (optional) classifier + analyzer
 # ============================================================
 
 @app.post("/predict", response_model=InferenceEvent)
@@ -231,36 +266,51 @@ async def predict(file: UploadFile = File(...)):
     assert analyzer is not None, "Analyzer not initialized"
 
     try:
-        # --- 1) Run ONNX classifier (drone vs non-drone) ---
+        # --- 1) Preprocess audio ---
         x = preprocess_audio_bytes(raw_bytes)
         print(f"[PREDICT] preprocess ok in {time.time() - start:.3f}s, shape={x.shape}")
 
-        probs = run_model(x)
-        print(f"[PREDICT] inference ok in {time.time() - start:.3f}s, probs={probs}")
+        # --- 2) Run detector (drone vs non-drone) ---
+        det_probs = run_detector(x)
+        print(f"[PREDICT] detector ok in {time.time() - start:.3f}s, probs={det_probs}")
     except Exception as e:
         import traceback
-        print("[PREDICT] ERROR during ONNX processing:")
+        print("[PREDICT] ERROR during detector ONNX processing:")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
-    # Derive label + score from ONNX probabilities
-    label = max(probs, key=probs.get)
-    score = probs[label]
+    # Derive label + score from detector probabilities
+    label = max(det_probs, key=det_probs.get)
+    score = det_probs[label]
     is_drone = label == "drone" and score >= 0.5
 
-    # --- 2) Compute metrics from analyzer (speed, distance, etc.) ---
+    # --- 3) Optional: drone-type classifier (A–J) ---
+    drone_type = None
+    drone_type_score = None
+    drone_type_probs: Optional[Dict[str, float]] = None
+
+    if is_drone:
+        try:
+            cls_probs = run_classifier(x)
+            drone_type_probs = cls_probs
+            drone_type = max(cls_probs, key=cls_probs.get)
+            drone_type_score = cls_probs[drone_type]
+            print(f"[PREDICT] classifier ok in {time.time() - start:.3f}s, type={drone_type}, probs={cls_probs}")
+        except Exception as e:
+            import traceback
+            print("[PREDICT] WARNING: classifier failed, continuing without drone type")
+            traceback.print_exc()
+
+    # --- 4) Compute metrics from analyzer (speed, distance, etc.) ---
     metrics_obj: Optional[DroneMetrics] = None
     try:
         file_format = file.filename.split(".")[-1] if file.filename else "wav"
         metrics_dict = analyzer.analyze_audio(raw_bytes, format=file_format)
 
-        # Optional: refine with analyzer features / ambient filter
         try:
             audio_io = io.BytesIO(raw_bytes)
             audio_array, sr = librosa.load(audio_io, sr=44100, mono=True)
             features = analyzer._extract_features(audio_array, sr)
-            # you could combine this with ONNX output if you want:
-            # is_drone = is_drone and analyzer.filter_ambient_noise(features)
         except Exception:
             features = {}
 
@@ -279,7 +329,6 @@ async def predict(file: UploadFile = File(...)):
                 payload_confidence=payload_conf,
             )
     except Exception as e:
-        # Metrics are optional; log and continue if they fail
         import traceback
         print("[PREDICT] WARNING: analyzer metrics failed:")
         traceback.print_exc()
@@ -288,10 +337,13 @@ async def predict(file: UploadFile = File(...)):
     event = InferenceEvent(
         label=label,
         score=score,
-        probs=probs,
+        probs=det_probs,
         timestamp=int(time.time() * 1000),
         window_sec=None,
         metrics=metrics_obj if is_drone else None,
+        drone_type=drone_type,
+        drone_type_score=drone_type_score,
+        drone_type_probs=drone_type_probs,
     )
 
     print(f"[PREDICT] total {time.time() - start:.3f}s")
@@ -300,8 +352,7 @@ async def predict(file: UploadFile = File(...)):
 
 # ============================================================
 # WS: streaming /ws/audio
-# Currently uses dummy or heuristic analyzer;
-# ONNX streaming can be plugged in later.
+# (unchanged: still heuristic analyzer only)
 # ============================================================
 
 @app.websocket("/ws/audio")
@@ -309,19 +360,17 @@ async def ws_audio(ws: WebSocket):
     await ws.accept()
     window_sec = 0.3  # ~300ms chunks
 
-    # Dummy mode: just ignore chunk contents and emit rotating dummy events
     if USE_DUMMY_DATA:
         print("[WS] client connected (dummy mode)")
         try:
             while True:
-                await ws.receive_bytes()  # keep connection alive
+                await ws.receive_bytes()
                 msg = build_dummy_event(window=window_sec)
                 await ws.send_text(msg.json())
         except WebSocketDisconnect:
             print("[WS] client disconnected (dummy mode)")
             return
 
-    # Real streaming mode with analyzer
     print("[WS] client connected")
     stream_analyzer = DroneAudioAnalyzer()
 
@@ -330,10 +379,8 @@ async def ws_audio(ws: WebSocket):
             chunk: bytes = await ws.receive_bytes()
             print(f"[WS] got chunk of {len(chunk)} bytes")
 
-            # --- 1) Analyze audio chunk for metrics / confidence ---
             metrics_dict = stream_analyzer.analyze_audio(chunk, format="webm")
 
-            # --- 2) Extract features and filter ambient noise ---
             try:
                 audio_io = io.BytesIO(chunk)
                 audio_array, sr = librosa.load(audio_io, sr=44100, mono=True)
@@ -343,14 +390,12 @@ async def ws_audio(ws: WebSocket):
                 is_drone = True
                 features = {}
 
-            # --- 3) Heuristic "drone" confidence for streaming ---
             drone_confidence = metrics_dict.get("confidence", 0.5) if is_drone else 0.1
             probs = {
                 "drone": float(drone_confidence),
                 "non-drone": float(1.0 - drone_confidence),
             }
 
-            # --- 4) Build metrics object ---
             if features:
                 has_payload, payload_conf = stream_analyzer._detect_payload(features)
             else:
@@ -365,10 +410,6 @@ async def ws_audio(ws: WebSocket):
                 payload_confidence=payload_conf,
             )
 
-            # TODO: If you want, you can also run the ONNX model here by
-            # buffering enough audio and calling preprocess_audio_bytes + run_model.
-            # Right now, websocket streaming uses the heuristic analyzer only.
-
             msg = InferenceEvent(
                 label="drone" if drone_confidence > 0.5 else "non-drone",
                 score=float(drone_confidence),
@@ -376,6 +417,9 @@ async def ws_audio(ws: WebSocket):
                 timestamp=int(time.time() * 1000),
                 window_sec=window_sec,
                 metrics=metrics_obj if is_drone else None,
+                drone_type=None,
+                drone_type_score=None,
+                drone_type_probs=None,
             )
 
             await ws.send_text(msg.json())
@@ -383,10 +427,6 @@ async def ws_audio(ws: WebSocket):
     except WebSocketDisconnect:
         print("[WS] client disconnected")
 
-
-# ============================================================
-# Entrypoint (optional, if you want to run via `python main.py`)
-# ============================================================
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

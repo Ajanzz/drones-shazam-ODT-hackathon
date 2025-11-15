@@ -6,8 +6,15 @@ import type { InferenceEvent } from "./types";
 import DroneRadar from "./components/DroneRadar";
 import type { TrackedDrone } from "./components/DroneRadar";
 
-
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL ?? "http://localhost:8000";
+
+// helper to prettify "drone_A" -> "Drone A"
+function prettyDroneType(id: string | null | undefined): string {
+  if (!id) return "";
+  const m = id.match(/^drone_([A-Z])$/i);
+  if (m) return `Drone ${m[1].toUpperCase()}`;
+  return id;
+}
 
 export default function App() {
   const api = useMemo(() => new ApiClient(BACKEND_URL), []);
@@ -45,8 +52,7 @@ export default function App() {
   }
 
   // ---- derive tracked drones for radar from history ----
-  const dronesForRadar: TrackedDrone[] = useMemo(() => {
-    // take recent events that are drones with metrics
+  const dronesForRadar: TrackedDrone[] = React.useMemo(() => {
     const droneEvents = history.filter(
       (e) => e.label === "drone" && e.metrics
     );
@@ -61,11 +67,8 @@ export default function App() {
           ? m.distance
           : 50;
 
-      // For now we don't have real bearing from backend, so we spread them around the circle.
-      // Later you can add a bearing_deg field to metrics and plug it in here.
       const bearingDeg = (idx * 360) / Math.max(maxDrones, 1);
 
-      // Normalize direction string
       const rawDir = (m.direction || "unknown").toLowerCase();
       let direction: "approaching" | "receding" | "stationary" | "unknown";
       if (rawDir.includes("approach")) direction = "approaching";
@@ -109,8 +112,7 @@ export default function App() {
             Streams audio chunks to <code>{BACKEND_URL}</code> via WebSocket
             (<code>/ws/audio</code>). Start once the backend is running.
           </p>
-          {/* Uncomment when component gets added
-          <AudioRecorder
+          {/* <AudioRecorder
             enabled={wsConnected}
             onChunk={(blob) => api.sendAudioChunk(blob)}
           /> */}
@@ -140,6 +142,7 @@ export default function App() {
         </div>
       </section>
 
+      {/* ----- Current prediction (detector + classifier) ----- */}
       <section className="card">
         <h2 className="section-title">
           <span className="icon">🔮</span> Current prediction
@@ -148,6 +151,7 @@ export default function App() {
           <p className="muted">No inference yet.</p>
         ) : (
           <div>
+            {/* Primary detector: drone vs non-drone */}
             <div className="current-row">
               <div className="big-label">{current.label}</div>
               <div className="big-score">{(current.score * 100).toFixed(1)}%</div>
@@ -161,6 +165,36 @@ export default function App() {
               ts: {new Date(current.timestamp).toLocaleTimeString()} • dur:{" "}
               {(current.window_sec ?? 0).toFixed(2)}s
             </p>
+
+            {/* Secondary classifier: drone type A–J */}
+            {current.label === "drone" && current.drone_type && (
+              <div className="mt-lg">
+                <h3 className="section-title small">
+                  <span className="icon">🏷️</span> Drone type
+                </h3>
+                <div className="current-row">
+                  <div className="big-label">
+                    {prettyDroneType(current.drone_type)}
+                  </div>
+                  {current.drone_type_score != null && (
+                    <div className="big-score">
+                      {(current.drone_type_score * 100).toFixed(1)}%
+                    </div>
+                  )}
+                </div>
+                {current.drone_type_probs && (
+                  <div className="prob-grid">
+                    {Object.entries(current.drone_type_probs).map(([k, v]) => (
+                      <ProbBar
+                        key={k}
+                        label={prettyDroneType(k)}
+                        value={v}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </section>
@@ -231,7 +265,6 @@ export default function App() {
         </section>
       )}
 
-      {/* New radar map section */}
       <section className="card">
         <h2 className="section-title">
           <span className="icon">🗺️</span> Drone Radar Map
@@ -254,6 +287,11 @@ export default function App() {
             {history.map((e, i) => (
               <li key={i} className="history-item">
                 <span className="tag">{e.label}</span>
+                {e.drone_type && (
+                  <span className="tag secondary">
+                    {prettyDroneType(e.drone_type)}
+                  </span>
+                )}
                 <span className="score">{(e.score * 100).toFixed(1)}%</span>
                 <span className="muted small">
                   {new Date(e.timestamp).toLocaleTimeString()}
