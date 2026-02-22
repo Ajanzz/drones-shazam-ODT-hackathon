@@ -7,8 +7,7 @@ Software application that detects and classifies drones based on the sound they 
 
 ## 🎥 Demo Video
 
-<video src="ShazamDemo.mp4" controls width="800">
-</video>
+[![Watch the demo](https://img.youtube.com/vi/qFxExk5NPbA/maxresdefault.jpg)](https://youtu.be/qFxExk5NPbA)
 
 ---
 
