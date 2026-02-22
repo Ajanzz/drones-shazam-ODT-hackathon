@@ -5,7 +5,7 @@ Team 2: AAAAK
 ## 📌 Overview
 Software application that detects and classifies drones based on the sound they produce. Using machine learning and signal processing, the app provides a **low-cost, portable, and scalable solution** for drone detection, making airspace security accessible to governments, businesses, and everyday individuals.
 
-## 🎥 Demo Video
+## 🎥 Demo Video — Shazam For Drones
 
 [![Watch the demo](https://img.youtube.com/vi/qFxExk5NPbA/maxresdefault.jpg)](https://youtu.be/qFxExk5NPbA)
 
